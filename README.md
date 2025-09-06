@@ -8,6 +8,7 @@
 
 #### Final Throughput
 
+```
 Server nodes: node0 node1
 Client nodes: node2 node3
 
@@ -15,6 +16,7 @@ node0 median 1761833 op/s
 node1 median 1610980 op/s
 
 total 3372813 op/s
+```
 
 #### Hardware Utilization
 
@@ -34,6 +36,7 @@ total 3372813 op/s
 
 #### Final Throughput
 
+```
 Server nodes: node0 node1 node2 node3
 Client nodes: node4 node5 node6 node7
 
@@ -43,6 +46,7 @@ node2 median 1591488 op/s
 node3 median 1513968 op/s
 
 total 6662312 op/s
+```
 
 #### Hardware Utilization
 
