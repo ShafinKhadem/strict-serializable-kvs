@@ -63,7 +63,7 @@ total 6662312 op/s
 
 ## 2 Design
 
-Our design process culminated in two distinct, high-performance, and linearizable implementations, each prioritizing a different performance philosophy. Our primary solution, detailed in the performance analysis below, strictly adheres to the workload generator's global order, achieving a remarkable final throughput of over 6.7 million ops/s. To explore the absolute performance limits of the architecture, we also researched a second solution designed to bypass the bottleneck inherent in the first. This alternative employed a fully asynchronous, non-blocking client that dispatches batches to all servers in parallel, yielding a significantly higher average throughput of 12 million ops/s on 4 nodes and 16 million ops/s on 8 nodes. Playing around with the configuration of 256 concurrent clients and ~ 10,000 in batch size, we were able to get this up to about 30 millions ops/s on 8 nodes. However, we did not select this as our main solution as its parallel nature does not preserve the global operation order, a specific constraint of the assignment. However, given that requests are sharded to independent, non-replicated servers, both designs are perfectly linearizable solutions.
+Our design process culminated in two distinct, high-performance, and linearizable implementations, each prioritizing a different performance philosophy. Our primary solution, detailed in the performance analysis which can be accessed in **commit-monitoring-results** folder, strictly adheres to the workload generator's global order, achieving a remarkable final throughput of over 6.7 million ops/s. To explore the absolute performance limits of the architecture, we also researched a second solution designed to bypass the bottleneck inherent in the first. This alternative employed a fully asynchronous, non-blocking client that dispatches both GET and PUT batches to all servers in parallel, yielding a significantly higher average throughput of 12 million ops/s on 4 nodes and 16 million ops/s on 8 nodes. Playing around with the configuration of 256 concurrent clients and ~ 10,000 in batch size, we were able to get this up to about 30 millions ops/s on 8 nodes. However, we did not select this as our main solution as its parallel nature does not preserve the global operation order of the workload generator, a specific constraint of the assignment. However, given that requests are sharded to independent, non-replicated servers, both designs are perfectly linearizable solutions.
 
 Our initial design bottleneck, evident in the baseline performance of ~10,000 ops/s, was the inability to generate sufficient load to stress a distributed system. The first major architectural breakthrough was to scale request distribution to all available servers and using concurrent client goroutines. This change was not merely an optimization but a bug fix to the original design that enables us to properly test the system's limits. The rationale was that a distributed backend is meaningless without a distributed client load. This single change yielded a **+6,700% performance increase** to 1.3M ops/s. Following this, our analysis showed the system had become network-bound. To solve this, we implemented **client-side batching of GET requests**, which amortized the cost of network latency over many operations. This choice was validated by another **+361% jump** in throughput to over 6M ops/s, confirming that network round-trip time had been the second major bottleneck.
 
@@ -99,14 +99,14 @@ These are expected linearizable outcomes given that the system works perfectly. 
 
 **Step-by-step instructions.** Run `./run-cluster.sh`.
 
-**Hardware requirements and setup.** 4 CloudLab m510 machines.
+**Hardware requirements and setup.** 4 or 8 CloudLab m510 machines.
 
 **Software dependencies and installation.**
 
 **Configuration parameters and their effects in particular if you've added "knobs".**
 
-## Reflections
-
+## 4 Reflections
+     
 This assignment gave us a more practical overview into what building high-performance concurrent system entail. **Bottleneck analysis** was the most important part in our approach. We learn that the process is iterative and sometimes it was a matter of identifying and prioritizing the most significant constraints. This would have not worked if we just dive right in to apply known methodology. Monitoring the log and network latency, we were able to identify that all requests were being routed to only one server. After successfully increasing the throughput by multiplying concurrent clients, we notice that vertically scaling clients started falling off after a certain amount and prompted us to seek request batching as an option.
 
 We also learn that the process is about making the right balance between correctness and performance. The trade-off in providing a high throughput system but inaccurate is meaningless if it cannot guarantee the integrity of its data under concurrent access.
@@ -127,3 +127,5 @@ We also learn that the process is about making the right balance between correct
 
 1. Trying a different protocol & serialization method: Due to complexity and time-constraint, we could not look into swapping out the native `gob` serialization scheme provided by `net/rpc`. Although we are not entirely sure if this would improve the bottleneck in network latency, we hypothesize that migrating to gRPC using Protobuf could reduce the overhead in serializing the requests.
 2. Client-side caching: Despite server caching not working out, we believe in a real world scenario where high availability is favored and some sacrifice in linearizability is tolerable, client-side caching can be an option to serve more read-heavy workload.
+
+This project was a combination of equal effort of all the members of our team. Tuan and Giang helped analyzing the code structures, initial bottleneck and devising corresponding basic strategies to increase the throughput. Nafiur culminated all these efforts, made throrough testing of different strategies while adhering closely to correctness requirements and devised all final architectural decisions. Sicheng helped come up with test suites, analysis code to generate corresponding report and benchmark that verifies each iteration of our code changes for best performance.
