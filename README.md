@@ -105,8 +105,8 @@ These are expected linearizable outcomes given that the system works perfectly. 
 
 **Configuration parameters and their effects in particular if you've added "knobs".**
 
-## Reflections
-
+## 4 Reflections
+     
 This assignment gave us a more practical overview into what building high-performance concurrent system entail. **Bottleneck analysis** was the most important part in our approach. We learn that the process is iterative and sometimes it was a matter of identifying and prioritizing the most significant constraints. This would have not worked if we just dive right in to apply known methodology. Monitoring the log and network latency, we were able to identify that all requests were being routed to only one server. After successfully increasing the throughput by multiplying concurrent clients, we notice that vertically scaling clients started falling off after a certain amount and prompted us to seek request batching as an option.
 
 We also learn that the process is about making the right balance between correctness and performance. The trade-off in providing a high throughput system but inaccurate is meaningless if it cannot guarantee the integrity of its data under concurrent access.
@@ -127,3 +127,5 @@ We also learn that the process is about making the right balance between correct
 
 1. Trying a different protocol & serialization method: Due to complexity and time-constraint, we could not look into swapping out the native `gob` serialization scheme provided by `net/rpc`. Although we are not entirely sure if this would improve the bottleneck in network latency, we hypothesize that migrating to gRPC using Protobuf could reduce the overhead in serializing the requests.
 2. Client-side caching: Despite server caching not working out, we believe in a real world scenario where high availability is favored and some sacrifice in linearizability is tolerable, client-side caching can be an option to serve more read-heavy workload.
+
+This project was a combination of equal effort of all the members of our team. Tuan and Giang helped analyzing the code structures, initial bottleneck and devising corresponding basic strategies to increase the throughput. Nafiur culminated all these efforts, made throrough testing of different strategies while adhering closely to correctness requirements and devised all final architectural decisions. Sicheng helped come up with test suites, analysis code to generate corresponding report and benchmark that verifies each iteration of our code changes for best performance.
