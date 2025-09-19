@@ -64,6 +64,20 @@ func (kv *KVService) Put(request *kvs.PutRequest, response *kvs.PutResponse) err
 	return nil
 }
 
+func (kv *KVService) Commit(req *kvs.CommitRequest, resp *kvs.CommitResponse) error {
+    // TODO: implement the second phase commit of 2PC
+    // 1. Apply all pending Put operations
+    // 2. Release all locks held by the transaction
+    return nil
+}
+
+func (kv *KVService) Abort(req *kvs.AbortRequest, resp *kvs.AbortResponse) error {
+    // TODO: implement the second phase abort of 2PC
+    // 1. Discard all pending Put operations
+    // 2. Release all locks held by the transaction
+    return nil
+}
+
 func (kv *KVService) printStats() {
 	kv.Lock()
 	stats := kv.stats

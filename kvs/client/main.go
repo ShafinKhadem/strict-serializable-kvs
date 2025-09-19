@@ -14,6 +14,10 @@ import (
 
 type Client struct {
 	rpcClient *rpc.Client
+	activeTransaction string              // current active transaction ID
+    writeSet         map[string]string    // local write set
+    participants     []*rpc.Client        // list of participating servers
+    clientID         string
 }
 
 func Dial(addr string) *Client {
@@ -22,7 +26,21 @@ func Dial(addr string) *Client {
 		log.Fatal(err)
 	}
 
-	return &Client{rpcClient}
+	return &Client{rpcClient, "", make(map[string]string), nil, ""}
+}
+
+func (c *Client) Begin() {
+    // TODO: generate a new transaction ID and initialize state
+}
+
+func (c *Client) Commit() error {
+    // TODO: perform 2PC commit
+    return nil
+}
+
+func (c *Client) Abort() error {
+    // TODO: perform 2PC abort
+    return nil
 }
 
 func (client *Client) Get(key string) string {
