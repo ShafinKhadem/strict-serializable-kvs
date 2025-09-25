@@ -2,7 +2,7 @@ package kvs
 
 import (
 	"math"
-	"math/rand/v2"
+	"math/rand"
 )
 
 type Workload struct {

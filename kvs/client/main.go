@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/rpc"
 	"strings"
 	"sync/atomic"
@@ -13,11 +14,12 @@ import (
 )
 
 type Client struct {
-	rpcClient *rpc.Client
-	activeTransaction string              // current active transaction ID
-    writeSet         map[string]string    // local write set
-    participants     []*rpc.Client        // list of participating servers
-    clientID         string
+	rpcClient         *rpc.Client
+	activeTransaction string            // current active transaction ID
+	writeSet          map[string]string // local write set
+	participants      []*rpc.Client     // list of participating servers
+	clientID          string
+	hosts             []string // list of all server hosts
 }
 
 func Dial(addr string) *Client {
@@ -26,50 +28,201 @@ func Dial(addr string) *Client {
 		log.Fatal(err)
 	}
 
-	return &Client{rpcClient, "", make(map[string]string), nil, ""}
+	return &Client{
+		rpcClient:         rpcClient,
+		activeTransaction: "",
+		writeSet:          make(map[string]string),
+		participants:      nil,
+		clientID:          "",
+		hosts:             nil,
+	}
 }
 
-func (c *Client) Begin() {
-    // TODO: generate a new transaction ID and initialize state
+func NewClient(hosts []string) *Client {
+	// Connect to the first host initially
+	client := Dial(hosts[0])
+	client.hosts = hosts
+	client.clientID = fmt.Sprintf("%d", rand.Int63())
+	return client
+}
+
+func (c *Client) Begin() error {
+	if c.activeTransaction != "" {
+		return fmt.Errorf("Cannot begin transaction: already in transaction")
+	}
+
+	// Generate unique transaction ID
+	txID := fmt.Sprintf("%s-%d", c.clientID, time.Now().UnixNano())
+	c.activeTransaction = txID
+
+	// Initialize transaction state
+	c.writeSet = make(map[string]string)
+	c.participants = make([]*rpc.Client, 0)
+	return nil
 }
 
 func (c *Client) Commit() error {
-    // TODO: perform 2PC commit
-    return nil
+	if c.activeTransaction == "" {
+		panic("Cannot commit: no active transaction")
+	}
+
+	// Phase 2 of 2PC: Send commit to all participants
+	success := true
+	for i, participant := range c.participants {
+		req := kvs.CommitRequest{
+			TransactionID: c.activeTransaction,
+			Lead:          i == 0, // First participant is the lead
+		}
+		resp := kvs.CommitResponse{}
+		err := participant.Call("KVService.Commit", &req, &resp)
+		if err != nil || !resp.Success {
+			success = false
+			break
+		}
+	}
+
+	// Clear transaction state
+	c.activeTransaction = ""
+	c.writeSet = nil
+	c.participants = nil
+
+	if !success {
+		return fmt.Errorf("commit failed")
+	}
+	return nil
 }
 
 func (c *Client) Abort() error {
-    // TODO: perform 2PC abort
-    return nil
+	if c.activeTransaction == "" {
+		return fmt.Errorf("Cannot abort: no active transaction")
+	}
+
+	// Phase 2 of 2PC: Send abort to all participants
+	for _, participant := range c.participants {
+		req := kvs.AbortRequest{
+			TransactionID: c.activeTransaction,
+		}
+		resp := kvs.AbortResponse{}
+		participant.Call("KVService.Abort", &req, &resp)
+		// Don't check for errors on abort - just try to clean up
+	}
+
+	// Clear transaction state
+	c.activeTransaction = ""
+	c.writeSet = nil
+	c.participants = nil
+
+	return nil
 }
 
-func (client *Client) Get(key string) string {
+func (client *Client) Get(key string) (string, error) {
+	if client.activeTransaction == "" {
+		return "", fmt.Errorf("Cannot get: no active transaction")
+	}
+
+	// Check write set first (read own writes)
+	if value, exists := client.writeSet[key]; exists {
+		return value, nil
+	}
+
+	// Determine which server to contact based on key
+	serverAddr := client.getServerForKey(key)
+	rpcClient, err := rpc.DialHTTP("tcp", serverAddr)
+	if err != nil {
+		return "", err
+	}
+
+	// Add to participants if not already there
+	client.addParticipant(rpcClient)
+
 	request := kvs.GetRequest{
-		Key: key,
+		Key:           key,
+		TransactionID: client.activeTransaction,
 	}
 	response := kvs.GetResponse{}
-	err := client.rpcClient.Call("KVService.Get", &request, &response)
+	err = rpcClient.Call("KVService.Get", &request, &response)
 	if err != nil {
-		log.Fatal(err)
+		return "", err
 	}
 
-	return response.Value
+	if response.LockFail {
+		// Lock failed, abort transaction automatically
+		client.Abort()
+		return "", fmt.Errorf("lock failed")
+	}
+
+	return response.Value, nil
 }
 
-func (client *Client) Put(key string, value string) {
+func (client *Client) Put(key string, value string) error {
+	if client.activeTransaction == "" {
+		return fmt.Errorf("Cannot put: no active transaction")
+	}
+
+	// Add to local write set (read own writes)
+	client.writeSet[key] = value
+
+	// Determine which server to contact based on key
+	serverAddr := client.getServerForKey(key)
+	rpcClient, err := rpc.DialHTTP("tcp", serverAddr)
+	if err != nil {
+		return err
+	}
+
+	// Add to participants if not already there
+	client.addParticipant(rpcClient)
+
 	request := kvs.PutRequest{
-		Key:   key,
-		Value: value,
+		Key:           key,
+		Value:         value,
+		TransactionID: client.activeTransaction,
 	}
 	response := kvs.PutResponse{}
-	err := client.rpcClient.Call("KVService.Put", &request, &response)
+	err = rpcClient.Call("KVService.Put", &request, &response)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
+
+	if response.LockFail {
+		// Lock failed, abort transaction automatically
+		client.Abort()
+		return fmt.Errorf("lock failed")
+	}
+
+	return nil
 }
 
-func runClient(id int, addr string, done *atomic.Bool, workload *kvs.Workload, resultsCh chan<- uint64) {
-	client := Dial(addr)
+// Helper method to determine which server to contact for a key
+func (client *Client) getServerForKey(key string) string {
+	// If no hosts configured, use the current connection
+	if client.hosts == nil || len(client.hosts) == 0 {
+		return "localhost:8080" // Default for single server tests
+	}
+
+	// Simple hash-based sharding
+	hash := 0
+	for _, c := range key {
+		hash = hash*31 + int(c)
+	}
+	if hash < 0 {
+		hash = -hash
+	}
+	return client.hosts[hash%len(client.hosts)]
+}
+
+// Helper method to add a participant if not already present
+func (client *Client) addParticipant(rpcClient *rpc.Client) {
+	// Check if this client is already in participants
+	for _, p := range client.participants {
+		if p == rpcClient {
+			return
+		}
+	}
+	client.participants = append(client.participants, rpcClient)
+}
+
+func runClient(id int, hosts []string, done *atomic.Bool, workload *kvs.Workload, resultsCh chan<- uint64) {
+	client := NewClient(hosts)
 
 	value := strings.Repeat("x", 128)
 	const batchSize = 1024
@@ -78,19 +231,154 @@ func runClient(id int, addr string, done *atomic.Bool, workload *kvs.Workload, r
 
 	for !done.Load() {
 		for j := 0; j < batchSize; j++ {
-			op := workload.Next()
-			key := fmt.Sprintf("%d", op.Key)
-			if op.IsRead {
-				client.Get(key)
-			} else {
-				client.Put(key, value)
+			// Run transaction with 3 operations
+			err := client.Begin()
+			if err != nil {
+				continue
 			}
+
+			success := true
+			for k := 0; k < 3; k++ {
+				op := workload.Next()
+				key := fmt.Sprintf("%d", op.Key)
+				if op.IsRead {
+					_, err := client.Get(key)
+					if err != nil {
+						success = false
+						break
+					}
+				} else {
+					err := client.Put(key, value)
+					if err != nil {
+						success = false
+						break
+					}
+				}
+			}
+
+			if success {
+				client.Commit()
+			} else {
+				client.Abort()
+			}
+
 			opsCompleted++
 		}
 	}
 
 	fmt.Printf("Client %d finished operations.\n", id)
 
+	resultsCh <- opsCompleted
+}
+
+func runPaymentClient(id int, hosts []string, done *atomic.Bool, resultsCh chan<- uint64) {
+	client := NewClient(hosts)
+
+	// Initialize accounts if this is client 0
+	if id == 0 {
+		err := client.Begin()
+		if err == nil {
+			for i := 0; i < 10; i++ {
+				client.Put(fmt.Sprintf("account_%d", i), "1000")
+			}
+			client.Commit()
+		}
+	}
+
+	opsCompleted := uint64(0)
+
+	for !done.Load() {
+		// Transfer transaction
+		err := client.Begin()
+		if err != nil {
+			continue
+		}
+
+		src := id
+		dst := (id + 1) % 10
+
+		srcBalStr, err := client.Get(fmt.Sprintf("account_%d", src))
+		if err != nil {
+			client.Abort()
+			continue
+		}
+
+		// Convert to int (simplified)
+		srcBal := 1000 // Default value for simplicity
+		if srcBalStr != "" {
+			fmt.Sscanf(srcBalStr, "%d", &srcBal)
+		}
+
+		if srcBal < 100 {
+			client.Abort()
+			continue
+		}
+
+		// Update source account balance
+		err = client.Put(fmt.Sprintf("account_%d", src), fmt.Sprintf("%d", srcBal-100))
+		if err != nil {
+			client.Abort()
+			continue
+		}
+
+		dstBalStr, err := client.Get(fmt.Sprintf("account_%d", dst))
+		if err != nil {
+			client.Abort()
+			continue
+		}
+
+		dstBal := 1000 // Default value for simplicity
+		if dstBalStr != "" {
+			fmt.Sscanf(dstBalStr, "%d", &dstBal)
+		}
+
+		err = client.Put(fmt.Sprintf("account_%d", dst), fmt.Sprintf("%d", dstBal+100))
+		if err != nil {
+			client.Abort()
+			continue
+		}
+
+		err = client.Commit()
+		if err != nil {
+			continue
+		}
+
+		opsCompleted++
+
+		// Balance check transaction
+		err = client.Begin()
+		if err != nil {
+			continue
+		}
+		total := 0
+		balances := make([]int, 10)
+
+		for i := 0; i < 10; i++ {
+			balStr, err := client.Get(fmt.Sprintf("account_%d", i))
+			if err != nil {
+				client.Abort()
+				break
+			}
+
+			bal := 1000
+			if balStr != "" {
+				fmt.Sscanf(balStr, "%d", &bal)
+			}
+			balances[i] = bal
+			total += bal
+		}
+
+		if total != 10000 {
+			fmt.Printf("ERROR: Total balance is %d, expected 10000\n", total)
+			fmt.Printf("Balances: %v\n", balances)
+		} else {
+			fmt.Printf("Balance check passed: %v\n", balances)
+		}
+
+		client.Commit()
+	}
+
+	fmt.Printf("Payment client %d finished operations.\n", id)
 	resultsCh <- opsCompleted
 }
 
@@ -131,11 +419,14 @@ func main() {
 	done := atomic.Bool{}
 	resultsCh := make(chan uint64)
 
-	host := hosts[0]
 	clientId := 0
 	go func(clientId int) {
-		workload := kvs.NewWorkload(*workload, *theta)
-		runClient(clientId, host, &done, workload, resultsCh)
+		if *workload == "xfer" {
+			runPaymentClient(clientId, hosts, &done, resultsCh)
+		} else {
+			workload := kvs.NewWorkload(*workload, *theta)
+			runClient(clientId, hosts, &done, workload, resultsCh)
+		}
 	}(clientId)
 
 	time.Sleep(time.Duration(*secs) * time.Second)
