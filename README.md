@@ -158,11 +158,7 @@ total 803 op/s
 - **Sharding**: Hash-based key distribution across multiple servers
 - **Statistics**: Real-time monitoring of commits/aborts per second
 
-## Testing
+---
+*Last updated: September 25, 2025*
 
-The implementation includes comprehensive unit tests covering:
-- Basic transaction operations
-- Write-Write conflicts
-- Read-Write conflicts
-- Transaction state management
 
