@@ -99,20 +99,24 @@ pkill -f kvsserver
 
 ### Running Workloads
 
-Use the `run-cluster.sh` script to run distributed workloads:
+Use the `run-cluster.sh` script to run distributed workloads. `./run-local.sh` for local test.
 
 ```bash
 # YCSB-B workload (95% reads, 5% writes) - 2 servers, 1 client, 30 seconds
-./run-cluster.sh 2 1 "" "-workload YCSB-B -secs 30"
+# ./run-cluster.sh 2 1 "" "-workload YCSB-B -secs 30"
+./run-local.sh 2 1 "" "-workload YCSB-B -secs 30"
 
 # YCSB-A workload (50% reads, 50% writes) - 2 servers, 1 client, 30 seconds  
-./run-cluster.sh 2 1 "" "-workload YCSB-A -secs 30"
+# ./run-cluster.sh 2 1 "" "-workload YCSB-A -secs 30"
+./run-local.sh 2 1 "" "-workload YCSB-A -secs 30"
 
 # YCSB-C workload (100% reads) - 2 servers, 1 client, 30 seconds
-./run-cluster.sh 2 1 "" "-workload YCSB-C -secs 30"
+# ./run-cluster.sh 2 1 "" "-workload YCSB-C -secs 30"
+./run-local.sh 2 1 "" "-workload YCSB-C -secs 30"
 
 # Payment workload (strict serializability testing) - 2 servers, 1 client, 30 seconds
-./run-cluster.sh 2 1 "" "-workload xfer -secs 30"
+# ./run-cluster.sh 2 1 "" "-workload xfer -secs 30"
+./run-local.sh 2 1 "" "-workload xfer -secs 30"
 ```
 
 ### Script Parameters
