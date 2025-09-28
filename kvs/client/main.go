@@ -20,6 +20,7 @@ type Client struct {
 	participants      []*rpc.Client     // list of participating servers
 	clientID          string
 	hosts             []string // list of all server hosts
+	connCache         map[string]*rpc.Client // cache of RPC clients by host
 }
 
 func Dial(addr string) *Client {
@@ -43,7 +44,22 @@ func NewClient(hosts []string) *Client {
 	client := Dial(hosts[0])
 	client.hosts = hosts
 	client.clientID = fmt.Sprintf("%d", rand.Int63())
+	client.connCache = make(map[string]*rpc.Client)
 	return client
+}
+
+func (client *Client) getConnection(addr string) (*rpc.Client, error) {
+    if conn, exists := client.connCache[addr]; exists {
+        return conn, nil
+    }
+    
+    conn, err := rpc.DialHTTP("tcp", addr)
+    if err != nil {
+        return nil, err
+    }
+    
+    client.connCache[addr] = conn
+    return conn, nil
 }
 
 func (c *Client) Begin() error {
@@ -108,9 +124,9 @@ func (c *Client) Abort() error {
 	}
 
 	// Clear transaction state
-	c.activeTransaction = ""
-	c.writeSet = nil
-	c.participants = nil
+    c.activeTransaction = ""
+    c.writeSet = make(map[string]string)
+    c.participants = make([]*rpc.Client, 0)
 
 	return nil
 }
@@ -127,7 +143,7 @@ func (client *Client) Get(key string) (string, error) {
 
 	// Determine which server to contact based on key
 	serverAddr := client.getServerForKey(key)
-	rpcClient, err := rpc.DialHTTP("tcp", serverAddr)
+	rpcClient, err := client.getConnection(serverAddr)
 	if err != nil {
 		return "", err
 	}
@@ -147,7 +163,7 @@ func (client *Client) Get(key string) (string, error) {
 
 	if response.LockFail {
 		// Lock failed, abort transaction automatically
-		client.Abort()
+		// client.Abort()
 		return "", fmt.Errorf("lock failed")
 	}
 
@@ -164,7 +180,7 @@ func (client *Client) Put(key string, value string) error {
 
 	// Determine which server to contact based on key
 	serverAddr := client.getServerForKey(key)
-	rpcClient, err := rpc.DialHTTP("tcp", serverAddr)
+	rpcClient, err := client.getConnection(serverAddr)
 	if err != nil {
 		return err
 	}
@@ -185,7 +201,7 @@ func (client *Client) Put(key string, value string) error {
 
 	if response.LockFail {
 		// Lock failed, abort transaction automatically
-		client.Abort()
+		// client.Abort()
 		return fmt.Errorf("lock failed")
 	}
 
@@ -223,52 +239,101 @@ func (client *Client) addParticipant(rpcClient *rpc.Client) {
 
 func runClient(id int, hosts []string, done *atomic.Bool, workload *kvs.Workload, resultsCh chan<- uint64) {
 	client := NewClient(hosts)
-
 	value := strings.Repeat("x", 128)
 	const batchSize = 1024
-
+	const maxRetries = 100 
 	opsCompleted := uint64(0)
 
 	for !done.Load() {
-		for j := 0; j < batchSize; j++ {
-			// Run transaction with 3 operations
-			err := client.Begin()
-			if err != nil {
-				continue
-			}
+        for j := 0; j < batchSize; j++ {
+            // Pre-generate the 3 operations for this transaction
+            ops := make([]kvs.WorkloadOp, 3)
+            for k := 0; k < 3; k++ {
+                ops[k] = workload.Next()
+            }
+            
+            // Retry loop for the same transaction
+			retryCount := 0
+            for {
+				retryCount++
+                if retryCount > 1 && retryCount <= 10 {
+                    fmt.Printf("Client %d: Retrying transaction (attempt %d)\n", id, retryCount)
+                }
 
-			success := true
-			for k := 0; k < 3; k++ {
-				op := workload.Next()
-				key := fmt.Sprintf("%d", op.Key)
-				if op.IsRead {
-					_, err := client.Get(key)
-					if err != nil {
-						success = false
-						break
-					}
-				} else {
-					err := client.Put(key, value)
-					if err != nil {
-						success = false
-						break
-					}
+				// start new transaction
+                err := client.Begin()
+                if err != nil {
+                    continue
+                }
+
+                success := true
+				// failedAt := -1
+                for k := 0; k < 3; k++ {
+                    key := fmt.Sprintf("%d", ops[k].Key)
+                    if ops[k].IsRead {
+						fmt.Printf("Client %d: Attempting Get(%s)\n", id, key)
+                        _, err := client.Get(key)
+                        if err != nil {
+							fmt.Printf("Client %d: Get(%s) failed: %v\n", id, key, err)
+							// failedAt = k
+                            client.Abort()
+                            success = false
+                            break
+                        }
+                    } else {
+                        err := client.Put(key, value)
+                        if err != nil {
+							fmt.Printf("Client %d: Put(%s) failed: %v\n", id, key, err)
+                            // failedAt = k
+                            client.Abort()
+                            success = false
+                            break
+                        }
+                    }
+                }
+
+				if success {
+                    err = client.Commit()
+                    if err == nil {
+                        if retryCount > 10 {
+                            fmt.Printf("Client %d: Transaction finally committed after %d attempts\n", 
+                                id, retryCount)
+                        }
+                        break
+                    }
+                } else {
+                    client.Abort()
+                    // Exponential backoff, max 100ms
+                    backoff := time.Duration(1<<uint(min(retryCount, 7))) * time.Millisecond
+                    if backoff > 100*time.Millisecond {
+                        backoff = 100 * time.Millisecond
+                    }
+                    time.Sleep(backoff)
+                }
+
+				if retryCount >= maxRetries {
+					// Skip this transaction. Usually not expected to happen
+					// unless the system is overloaded or there's a bug.
+					fmt.Printf("Client %d: Giving up on transaction after %d retries\n", 
+						id, maxRetries)
+			
+					break
 				}
-			}
-
-			if success {
-				client.Commit()
-			} else {
-				client.Abort()
-			}
+            }
 
 			opsCompleted++
-		}
-	}
+        }
+    }
 
 	fmt.Printf("Client %d finished operations.\n", id)
-
 	resultsCh <- opsCompleted
+}
+
+func min(a, b int) int {
+    if a < b {
+        return a
+    }
+    return b
 }
 
 func runPaymentClient(id int, hosts []string, done *atomic.Bool, resultsCh chan<- uint64) {
