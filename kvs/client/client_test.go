@@ -35,7 +35,8 @@ func (client *Client) GetTx(k string) string {
 }
 
 func TestPutGet(t *testing.T) {
-	client := Dial(hosts[0])
+	// client := Dial(hosts[0])
+	client := NewClient([]string{"localhost:8080"})
 
 	// tx0
 	client.Begin()
@@ -77,8 +78,11 @@ func TestPutGet(t *testing.T) {
 }
 
 func TestWWConflict(t *testing.T) {
-	c1 := Dial(hosts[0])
-	c2 := Dial(hosts[0])
+	// c1 := Dial(hosts[0])
+	// c2 := Dial(hosts[0])
+
+	c1 := NewClient([]string{"localhost:8080"})
+    c2 := NewClient([]string{"localhost:8080"})
 
 	c1.Begin()
 	c2.Begin()
@@ -106,8 +110,11 @@ func TestWWConflict(t *testing.T) {
 }
 
 func TestRWConflict(t *testing.T) {
-	c1 := Dial(hosts[0])
-	c2 := Dial(hosts[0])
+	// c1 := Dial(hosts[0])
+	// c2 := Dial(hosts[0])
+
+	c1 := NewClient([]string{"localhost:8080"})
+    c2 := NewClient([]string{"localhost:8080"})
 
 	c1.Begin()
 	c2.Begin()
