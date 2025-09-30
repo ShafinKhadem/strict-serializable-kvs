@@ -150,8 +150,7 @@ echo "Initial cluster cleanup..."
 cleanup
 
 echo "Building the project..."
-# make
-echo "Skipping make - binaries already built"
+make
 echo
 
 # Start servers
