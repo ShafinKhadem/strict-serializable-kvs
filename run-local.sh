@@ -43,7 +43,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_ROOT="${ROOT}/logs"
 
 function cluster_size() {
-    /usr/local/etc/emulab/tmcc hostnames | wc -l
+    # For local testing, return a default number of nodes
+    # You can modify this number as needed for your local setup
+    echo 4
 }
 
 # Get available node count first to determine defaults
@@ -104,15 +106,15 @@ fi
 
 echo "Using $TOTAL_NEEDED of $AVAILABLE_COUNT available nodes (node0 to node$((AVAILABLE_COUNT-1)))"
 
-# Build server and client node arrays dynamically using sequential node names
+# For local execution, we'll run processes locally with different ports
 SERVER_NODES=()
 for ((i=0; i<SERVER_COUNT; i++)); do
-    SERVER_NODES+=("node$i")
+    SERVER_NODES+=("localhost")
 done
 
 CLIENT_NODES=()
-for ((i=SERVER_COUNT; i<SERVER_COUNT+CLIENT_COUNT; i++)); do
-    CLIENT_NODES+=("node$i")
+for ((i=0; i<CLIENT_COUNT; i++)); do
+    CLIENT_NODES+=("localhost")
 done
 
 echo "Server nodes: ${SERVER_NODES[*]}"
@@ -121,8 +123,8 @@ echo "Server args: $SERVER_ARGS"
 echo "Client args: $CLIENT_ARGS"
 echo
 
-SSH_OPTS="-o StrictHostKeyChecking=no"
-SSH="ssh ${SSH_OPTS}"
+# For local execution, we don't need SSH
+LOCAL_EXEC=""
 
 # Timestamped log directory
 TS=$(date +"%Y%m%d-%H%M%S")
@@ -134,11 +136,8 @@ echo "Logs will be in $LOG_DIR"
 
 # Cleanup function
 cleanup() {
-    echo "Cleaning up processes on all nodes..."
-    for node in "${SERVER_NODES[@]}" "${CLIENT_NODES[@]}"; do
-        echo "Cleaning up processes on $node..."
-        ${SSH} $node "pkill -f 'kvs(server|client)' || true" 2>/dev/null || true
-    done
+    echo "Cleaning up processes locally..."
+    pkill -f 'kvs(server|client)' 2>/dev/null || true
     echo "Cleanup complete."
     echo
 }
@@ -151,40 +150,43 @@ echo "Initial cluster cleanup..."
 cleanup
 
 echo "Building the project..."
-make
+# make
+echo "Skipping make - binaries already built"
 echo
 
 # Start servers
-for node in "${SERVER_NODES[@]}"; do
-    echo "Starting server on $node..."
-    ${SSH} $node "${ROOT}/bin/kvsserver $SERVER_ARGS > \"$LOG_DIR/kvsserver-$node.log\" 2>&1 &"
+for ((i=0; i<SERVER_COUNT; i++)); do
+    echo "Starting server $i..."
+    port=$((8080 + i))
+    "${ROOT}/bin/kvsserver" -port $port $SERVER_ARGS > "$LOG_DIR/kvsserver-$i.log" 2>&1 &
 done
 
 # Give servers time to start
 sleep 2
 
 # Start clients with a unique marker for identification
-# Build comma-separated list of server hosts with port 8080
+# Build comma-separated list of server hosts with different ports
 SERVER_HOSTS=""
-for node in "${SERVER_NODES[@]}"; do
+for ((i=0; i<SERVER_COUNT; i++)); do
+    port=$((8080 + i))
     if [ -n "$SERVER_HOSTS" ]; then
-        SERVER_HOSTS="$SERVER_HOSTS,$node:8080"
+        SERVER_HOSTS="$SERVER_HOSTS,localhost:$port"
     else
-        SERVER_HOSTS="$node:8080"
+        SERVER_HOSTS="localhost:$port"
     fi
 done
 
 CLIENT_PIDS=()
-for node in "${CLIENT_NODES[@]}"; do
-    echo "Starting client on $node..."
+for ((i=0; i<CLIENT_COUNT; i++)); do
+    echo "Starting client $i..."
     # Use a marker in the command line to make it easier to identify and wait for
-    CLIENT_MARKER="kvsclient-run-$TS-$node"
-    ${SSH} $node "exec -a '$CLIENT_MARKER' ${ROOT}/bin/kvsclient -hosts $SERVER_HOSTS $CLIENT_ARGS > \"$LOG_DIR/kvsclient-$node.log\" 2>&1" &
+    CLIENT_MARKER="kvsclient-run-$TS-$i"
+    exec -a "$CLIENT_MARKER" "${ROOT}/bin/kvsclient" -hosts "$SERVER_HOSTS" $CLIENT_ARGS > "$LOG_DIR/kvsclient-$i.log" 2>&1 &
     CLIENT_PIDS+=($!)
 done
 
 echo "Waiting for clients to finish..."
-# Wait for all client SSH sessions to complete
+# Wait for all client processes to complete
 for pid in "${CLIENT_PIDS[@]}"; do
     wait $pid 2>/dev/null || true
 done
