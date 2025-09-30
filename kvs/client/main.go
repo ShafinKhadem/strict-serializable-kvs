@@ -110,6 +110,7 @@ func (c *Client) Commit() error {
 
 func (c *Client) Abort() error {
 	if c.activeTransaction == "" {
+		fmt.Println("Warning: Abort called with no active transaction")
 		return fmt.Errorf("Cannot abort: no active transaction")
 	}
 
@@ -276,7 +277,7 @@ func runClient(id int, hosts []string, done *atomic.Bool, workload *kvs.Workload
                         if err != nil {
 							fmt.Printf("Client %d: Get(%s) failed: %v\n", id, key, err)
 							// failedAt = k
-                            client.Abort()
+                            // client.Abort()
                             success = false
                             break
                         }
@@ -285,7 +286,7 @@ func runClient(id int, hosts []string, done *atomic.Bool, workload *kvs.Workload
                         if err != nil {
 							fmt.Printf("Client %d: Put(%s) failed: %v\n", id, key, err)
                             // failedAt = k
-                            client.Abort()
+                            // client.Abort()
                             success = false
                             break
                         }
