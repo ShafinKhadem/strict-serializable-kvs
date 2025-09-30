@@ -78,27 +78,14 @@ func (kv *KVService) Get(request *kvs.GetRequest, response *kvs.GetResponse) err
 		kv.transactions[request.TransactionID] = tx
 	}
 
-	// Check if we already have a write lock (which allows reads)
-	lock, _ := kv.locks[request.Key]
-	if lock != nil && lock.Writer == request.TransactionID {
-		// We have write lock, can read
-		if value, exists := tx.WriteSet[request.Key]; exists {
-			response.Value = value
-		} else if value, found := kv.mp[request.Key]; found {
-			response.Value = value
-		}
-		response.Success = true
-		return nil
-	}
-
-	// Add to read set
-	tx.ReadSet[request.Key] = true
-
 	// Try to acquire read lock
 	if !kv.acquireReadLock(request.Key, request.TransactionID) {
 		response.LockFail = true
 		return nil
 	}
+
+	// Add to read set
+	tx.ReadSet[request.Key] = true
 
 	// Check if we have a pending write for this key
 	if value, exists := tx.WriteSet[request.Key]; exists {
@@ -129,14 +116,14 @@ func (kv *KVService) Put(request *kvs.PutRequest, response *kvs.PutResponse) err
 		kv.transactions[request.TransactionID] = tx
 	}
 
-	// Add to write set
-	tx.WriteSet[request.Key] = request.Value
-
 	// Try to acquire write lock
 	if !kv.acquireWriteLock(request.Key, request.TransactionID) {
 		response.LockFail = true
 		return nil
 	}
+
+	// Add to write set
+	tx.WriteSet[request.Key] = request.Value
 
 	response.Success = true
 	return nil
