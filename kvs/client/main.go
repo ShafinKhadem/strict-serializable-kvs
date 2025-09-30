@@ -348,10 +348,25 @@ func runPaymentClient(id int, hosts []string, done *atomic.Bool, resultsCh chan<
 			for i := 0; i < 10; i++ {
 				client.Put(fmt.Sprintf("account_%d", i), "1000")
 			}
+			client.Put("initialized", "true")
 			client.Commit()
+		}
+	} else {
+		// Wait until client 0 finishes initialization
+		for {
+			err := client.Begin()
+			if err != nil {
+				continue
+			}
+			initializedStr, err := client.Get("initialized")
+			client.Commit()
+			if err == nil && initializedStr == "true" {
+				break
+			}
 		}
 	}
 
+	fmt.Printf("Payment client %d starting\n", id)
 	opsCompleted := uint64(0)
 
 	for !done.Load() {
@@ -363,6 +378,8 @@ func runPaymentClient(id int, hosts []string, done *atomic.Bool, resultsCh chan<
 
 		src := id
 		dst := (id + 1) % 10
+
+		fmt.Printf("Payment client %d: transferring $100 from account_%d to account_%d\n", id, src, dst)
 
 		srcBalStr, err := client.Get(fmt.Sprintf("account_%d", src))
 		if err != nil {
@@ -493,15 +510,17 @@ func main() {
 	done := atomic.Bool{}
 	resultsCh := make(chan uint64)
 
-	clientId := 0
-	go func(clientId int) {
-		if *workload == "xfer" {
-			runPaymentClient(clientId, hosts, &done, resultsCh)
-		} else {
+	if *workload == "xfer" {
+		for clientId := 0; clientId < 10; clientId++ {
+			go runPaymentClient(clientId, hosts, &done, resultsCh)
+		}
+	} else {
+		clientId := 0
+		go func(clientId int) {
 			workload := kvs.NewWorkload(*workload, *theta)
 			runClient(clientId, hosts, &done, workload, resultsCh)
-		}
-	}(clientId)
+		}(clientId)
+	}
 
 	time.Sleep(time.Duration(*secs) * time.Second)
 	done.Store(true)
