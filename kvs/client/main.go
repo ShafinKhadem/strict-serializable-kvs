@@ -282,6 +282,7 @@ func runClient(id int, hosts []string, done *atomic.Bool, workload *kvs.Workload
                             break
                         }
                     } else {
+						fmt.Printf("Client %d: Attempting Put(%s)\n", id, key)
                         err := client.Put(key, value)
                         if err != nil {
 							fmt.Printf("Client %d: Put(%s) failed: %v\n", id, key, err)
