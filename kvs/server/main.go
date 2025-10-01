@@ -261,8 +261,10 @@ func (kv *KVService) Abort(req *kvs.AbortRequest, resp *kvs.AbortResponse) error
 	// Update transaction status
 	tx.Status = "aborted"
 
-	// Update stats
-	kv.stats.aborts++
+	// Update stats (only count if this is the lead participant)
+	if req.Lead {
+		kv.stats.aborts++
+	}
 
 	resp.Success = true
 	return nil

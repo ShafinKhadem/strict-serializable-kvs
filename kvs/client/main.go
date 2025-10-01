@@ -115,9 +115,10 @@ func (c *Client) Abort() error {
 	}
 
 	// Phase 2 of 2PC: Send abort to all participants
-	for _, participant := range c.participants {
+	for i, participant := range c.participants {
 		req := kvs.AbortRequest{
 			TransactionID: c.activeTransaction,
+			Lead:          i == 0, // First participant is the lead
 		}
 		resp := kvs.AbortResponse{}
 		participant.Call("KVService.Abort", &req, &resp)

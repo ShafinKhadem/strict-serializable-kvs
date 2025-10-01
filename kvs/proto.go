@@ -24,6 +24,7 @@ type GetResponse struct {
 
 type AbortRequest struct {
     TransactionID string
+	Lead		  bool    // the first participant is the lead
 }
 
 type CommitRequest struct {
