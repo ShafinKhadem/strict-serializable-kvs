@@ -435,11 +435,18 @@ func runPaymentClient(id int, hosts []string, done *atomic.Bool, resultsCh chan<
 			total += bal
 		}
 
+		fmt.Printf("Balances: %v\n", balances)
+
+		// Check for negative balances
+		for i, bal := range balances {
+			if bal < 0 {
+				fmt.Printf("ERROR: account_%d has negative balance %d\n", i, bal)
+			}
+		}
+
+		// Check total balance invariant
 		if total != 10000 {
 			fmt.Printf("ERROR: Total balance is %d, expected 10000\n", total)
-			fmt.Printf("Balances: %v\n", balances)
-		} else {
-			fmt.Printf("Balance check passed: %v\n", balances)
 		}
 
 		client.Commit()
