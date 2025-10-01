@@ -363,6 +363,7 @@ func runPaymentClient(id int, hosts []string, done *atomic.Bool, resultsCh chan<
 			if err == nil && initializedStr == "true" {
 				break
 			}
+			time.Sleep(10 * time.Millisecond)
 		}
 	}
 
@@ -384,6 +385,7 @@ func runPaymentClient(id int, hosts []string, done *atomic.Bool, resultsCh chan<
 		srcBalStr, err := client.Get(fmt.Sprintf("account_%d", src))
 		if err != nil {
 			client.Abort()
+			time.Sleep(10 * time.Millisecond)
 			continue
 		}
 
@@ -395,6 +397,7 @@ func runPaymentClient(id int, hosts []string, done *atomic.Bool, resultsCh chan<
 
 		if srcBal < 100 {
 			client.Abort()
+			time.Sleep(10 * time.Millisecond)
 			continue
 		}
 
@@ -402,12 +405,14 @@ func runPaymentClient(id int, hosts []string, done *atomic.Bool, resultsCh chan<
 		err = client.Put(fmt.Sprintf("account_%d", src), fmt.Sprintf("%d", srcBal-100))
 		if err != nil {
 			client.Abort()
+			time.Sleep(10 * time.Millisecond)
 			continue
 		}
 
 		dstBalStr, err := client.Get(fmt.Sprintf("account_%d", dst))
 		if err != nil {
 			client.Abort()
+			time.Sleep(10 * time.Millisecond)
 			continue
 		}
 
@@ -419,6 +424,7 @@ func runPaymentClient(id int, hosts []string, done *atomic.Bool, resultsCh chan<
 		err = client.Put(fmt.Sprintf("account_%d", dst), fmt.Sprintf("%d", dstBal+100))
 		if err != nil {
 			client.Abort()
+			time.Sleep(10 * time.Millisecond)
 			continue
 		}
 
@@ -437,10 +443,11 @@ func runPaymentClient(id int, hosts []string, done *atomic.Bool, resultsCh chan<
 		total := 0
 		balances := make([]int, 10)
 
+		fetchBalanceSuccess := true
 		for i := 0; i < 10; i++ {
 			balStr, err := client.Get(fmt.Sprintf("account_%d", i))
 			if err != nil {
-				client.Abort()
+				fetchBalanceSuccess = false
 				break
 			}
 
@@ -450,6 +457,12 @@ func runPaymentClient(id int, hosts []string, done *atomic.Bool, resultsCh chan<
 			}
 			balances[i] = bal
 			total += bal
+		}
+
+		if !fetchBalanceSuccess {
+			client.Abort()
+			time.Sleep(10 * time.Millisecond)
+			continue
 		}
 
 		fmt.Printf("Balances: %v\n", balances)
