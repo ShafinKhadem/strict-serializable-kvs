@@ -3,8 +3,8 @@
 # Extracts throughputs and summarizes them from a set of kvs server logs.
 # Mostly thrown together with Claude from a draft awk script.
 
-import os
 import glob
+import os
 import statistics
 
 LOG_DIR = "./logs/latest"
@@ -23,7 +23,7 @@ for log_path in log_files:
     throughputs = []
     with open(log_path) as f:
         for line in f:
-            if "ops/s" in line:
+            if "commit/s" in line:
                 parts = line.strip().split()
                 try:
                     # Throughput value is the 2nd column in original awk ($2)
@@ -32,10 +32,10 @@ for log_path in log_files:
                     pass
     if throughputs:
         median_val = statistics.median(sorted(throughputs))
-        print(f"{node} median {median_val:.0f} op/s")
+        print(f"{node} median {median_val:.0f} commit/s")
         total_throughput += median_val
     else:
-        print(f"{node} no ops/s data found")
+        print(f"{node} no commit/s data found")
 
 print()
-print(f"total {total_throughput:.0f} op/s")
+print(f"total {total_throughput:.0f} commit/s")
