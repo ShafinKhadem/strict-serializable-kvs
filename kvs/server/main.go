@@ -79,17 +79,17 @@ func (kv *KVService) Get(request *kvs.GetRequest, response *kvs.GetResponse) err
 	}
 
 	// Check if we already have a write lock (which allows reads)
-    lock, _ := kv.locks[request.Key]
-    if lock != nil && lock.Writer == request.TransactionID {
-        // We have write lock, can read
-        if value, exists := tx.WriteSet[request.Key]; exists {
-            response.Value = value
-        } else if value, found := kv.mp[request.Key]; found {
-            response.Value = value
-        }
-        response.Success = true
-        return nil
-    }
+	lock, _ := kv.locks[request.Key]
+	if lock != nil && lock.Writer == request.TransactionID {
+		// We have write lock, can read
+		if value, exists := tx.WriteSet[request.Key]; exists {
+			response.Value = value
+		} else if value, found := kv.mp[request.Key]; found {
+			response.Value = value
+		}
+		response.Success = true
+		return nil
+	}
 
 	// Add to read set
 	tx.ReadSet[request.Key] = true
@@ -154,14 +154,14 @@ func (kv *KVService) acquireReadLock(key, txID string) bool {
 	}
 
 	// Already have read lock
-    if lock.Readers[txID] {
-        return true
-    }
+	if lock.Readers[txID] {
+		return true
+	}
 
 	// If we have write lock, keep it (don't downgrade)
-    if lock.Writer == txID {
-        return true  // Read is allowed when holding write lock
-    }
+	if lock.Writer == txID {
+		return true // Read is allowed when holding write lock
+	}
 
 	// Can acquire read lock if no writer or if we already have read lock
 	if lock.Writer == "" || lock.Readers[txID] {
@@ -195,16 +195,16 @@ func (kv *KVService) acquireWriteLock(key, txID string) bool {
 	}
 
 	// Try to upgrade from read lock to write lock
-    if lock.Readers[txID] {
-        // Can only upgrade if we're the ONLY reader
-        if len(lock.Readers) == 1 {
-            delete(lock.Readers, txID)
-            lock.Writer = txID
-            return true
-        }
-        // Cannot upgrade with other readers present
-        return false
-    }
+	if lock.Readers[txID] {
+		// Can only upgrade if we're the ONLY reader
+		if len(lock.Readers) == 1 {
+			delete(lock.Readers, txID)
+			lock.Writer = txID
+			return true
+		}
+		// Cannot upgrade with other readers present
+		return false
+	}
 
 	return false
 }

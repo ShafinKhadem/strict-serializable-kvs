@@ -19,7 +19,7 @@ type Client struct {
 	writeSet          map[string]string // local write set
 	participants      []*rpc.Client     // list of participating servers
 	clientID          string
-	hosts             []string // list of all server hosts
+	hosts             []string               // list of all server hosts
 	connCache         map[string]*rpc.Client // cache of RPC clients by host
 }
 
@@ -49,17 +49,17 @@ func NewClient(hosts []string) *Client {
 }
 
 func (client *Client) getConnection(addr string) (*rpc.Client, error) {
-    if conn, exists := client.connCache[addr]; exists {
-        return conn, nil
-    }
-    
-    conn, err := rpc.DialHTTP("tcp", addr)
-    if err != nil {
-        return nil, err
-    }
-    
-    client.connCache[addr] = conn
-    return conn, nil
+	if conn, exists := client.connCache[addr]; exists {
+		return conn, nil
+	}
+
+	conn, err := rpc.DialHTTP("tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+
+	client.connCache[addr] = conn
+	return conn, nil
 }
 
 func (c *Client) Begin() error {
@@ -125,9 +125,9 @@ func (c *Client) Abort() error {
 	}
 
 	// Clear transaction state
-    c.activeTransaction = ""
-    c.writeSet = make(map[string]string)
-    c.participants = make([]*rpc.Client, 0)
+	c.activeTransaction = ""
+	c.writeSet = make(map[string]string)
+	c.participants = make([]*rpc.Client, 0)
 
 	return nil
 }
@@ -242,100 +242,100 @@ func runClient(id int, hosts []string, done *atomic.Bool, workload *kvs.Workload
 	client := NewClient(hosts)
 	value := strings.Repeat("x", 128)
 	const batchSize = 1024
-	const maxRetries = 100 
+	const maxRetries = 100
 	opsCompleted := uint64(0)
 
 	for !done.Load() {
-        for j := 0; j < batchSize; j++ {
-            // Pre-generate the 3 operations for this transaction
-            ops := make([]kvs.WorkloadOp, 3)
-            for k := 0; k < 3; k++ {
-                ops[k] = workload.Next()
-            }
-            
-            // Retry loop for the same transaction
+		for j := 0; j < batchSize; j++ {
+			// Pre-generate the 3 operations for this transaction
+			ops := make([]kvs.WorkloadOp, 3)
+			for k := 0; k < 3; k++ {
+				ops[k] = workload.Next()
+			}
+
+			// Retry loop for the same transaction
 			retryCount := 0
-            for {
+			for {
 				retryCount++
-                if retryCount > 1 && retryCount <= 10 {
-                    fmt.Printf("Client %d: Retrying transaction (attempt %d)\n", id, retryCount)
-                }
+				if retryCount > 1 && retryCount <= 10 {
+					fmt.Printf("Client %d: Retrying transaction (attempt %d)\n", id, retryCount)
+				}
 
 				// start new transaction
-                err := client.Begin()
-                if err != nil {
-                    continue
-                }
+				err := client.Begin()
+				if err != nil {
+					continue
+				}
 
-                success := true
+				success := true
 				// failedAt := -1
-                for k := 0; k < 3; k++ {
-                    key := fmt.Sprintf("%d", ops[k].Key)
-                    if ops[k].IsRead {
+				for k := 0; k < 3; k++ {
+					key := fmt.Sprintf("%d", ops[k].Key)
+					if ops[k].IsRead {
 						fmt.Printf("Client %d: Attempting Get(%s)\n", id, key)
-                        _, err := client.Get(key)
-                        if err != nil {
+						_, err := client.Get(key)
+						if err != nil {
 							fmt.Printf("Client %d: Get(%s) failed: %v\n", id, key, err)
 							// failedAt = k
-                            // client.Abort()
-                            success = false
-                            break
-                        }
-                    } else {
+							// client.Abort()
+							success = false
+							break
+						}
+					} else {
 						fmt.Printf("Client %d: Attempting Put(%s)\n", id, key)
-                        err := client.Put(key, value)
-                        if err != nil {
+						err := client.Put(key, value)
+						if err != nil {
 							fmt.Printf("Client %d: Put(%s) failed: %v\n", id, key, err)
-                            // failedAt = k
-                            // client.Abort()
-                            success = false
-                            break
-                        }
-                    }
-                }
+							// failedAt = k
+							// client.Abort()
+							success = false
+							break
+						}
+					}
+				}
 
 				if success {
-                    err = client.Commit()
-                    if err == nil {
-                        if retryCount > 10 {
-                            fmt.Printf("Client %d: Transaction finally committed after %d attempts\n", 
-                                id, retryCount)
-                        }
-                        break
-                    }
-                } else {
-                    client.Abort()
-                    // Exponential backoff, max 100ms
-                    backoff := time.Duration(1<<uint(min(retryCount, 7))) * time.Millisecond
-                    if backoff > 100*time.Millisecond {
-                        backoff = 100 * time.Millisecond
-                    }
-                    time.Sleep(backoff)
-                }
+					err = client.Commit()
+					if err == nil {
+						if retryCount > 10 {
+							fmt.Printf("Client %d: Transaction finally committed after %d attempts\n",
+								id, retryCount)
+						}
+						break
+					}
+				} else {
+					client.Abort()
+					// Exponential backoff, max 100ms
+					backoff := time.Duration(1<<uint(min(retryCount, 7))) * time.Millisecond
+					if backoff > 100*time.Millisecond {
+						backoff = 100 * time.Millisecond
+					}
+					time.Sleep(backoff)
+				}
 
 				if retryCount >= maxRetries {
 					// Skip this transaction. Usually not expected to happen
 					// unless the system is overloaded or there's a bug.
-					fmt.Printf("Client %d: Giving up on transaction after %d retries\n", 
+					fmt.Printf("Client %d: Giving up on transaction after %d retries\n",
 						id, maxRetries)
-			
+
 					break
 				}
-            }
+			}
 
 			opsCompleted++
-        }
-    }
+		}
+	}
 
 	fmt.Printf("Client %d finished operations.\n", id)
 	resultsCh <- opsCompleted
 }
 
 func min(a, b int) int {
-    if a < b {
-        return a
-    }
-    return b
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func runPaymentClient(id int, hosts []string, done *atomic.Bool, resultsCh chan<- uint64) {
