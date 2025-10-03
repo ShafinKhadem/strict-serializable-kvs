@@ -10,87 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-/*
-Expected Output (just an example, the real timing may vary):
-
-=== Testing Retry Logic with Forced Conflicts ===
-[C2-Attempt-1] Put failed: lock failed (EXPECTED)
-[C2-Attempt-2] Put failed: lock failed (EXPECTED)
-[C1] SUCCESS after 1 attempts
-[C2-Attempt-3] Put failed: lock failed (EXPECTED)
-[C2] SUCCESS after 4 attempts
-
-=== Retry Statistics ===
-C1 retries: 0
-C2 retries: 3
-
-Final value: c2_final
-
-==============================================================================
-
-Corresponding Timeline:
-
-T0 (0ms): initialization
-    - shared_key = "initial"
-    - start C1 and C2 goroutines
-
-T1 (1ms): C1 attempt 1
-    - C1: Begin() → txid: "c1-tx1"
-    - C1: Put("shared_key", "c1_value") → success, acquired write lock
-    - C1: sent signal to c1Started channel
-    - C1: waiting for c2Started channel (blocked)
-
-T2 (2ms): C2 attempt 1
-    - C2: received c1Started signal
-    - C2: Begin() → txid: "c2-tx1"
-    - C2: Put("shared_key", "c2_value") → failed! C1 holds write lock
-    - C2: printed "[C2-Attempt-1] Put failed: lock failed (EXPECTED)"
-    - C2: sent signal to c2Started channel
-    - C2: Abort() → released all locks (even though there were none)
-    - C2: c2Retries++
-    - C2: Sleep(10ms)
-
-T3 (3ms): C1 continue
-    - C1: received c2Started signal
-    - C1: Sleep(20ms) ← intentionally holding the lock
-
-T12 (12ms): C2 attempt 2
-    - C2: Begin() → txid: "c2-tx2"
-    - C2: Put("shared_key", "c2_value") → failed! C1 still holds the lock
-    - C2: printed "[C2-Attempt-2] Put failed: lock failed (EXPECTED)"
-    - C2: Abort()
-    - C2: c2Retries++
-    - C2: Sleep(10ms)
-
-T22 (22ms): C2 attempt 3
-    - C2: Begin() → txid: "c2-tx3"
-    - C2: Put("shared_key", "c2_value") → failed! C1 still holds the lock
-    - C2: printed "[C2-Attempt-3] Put failed: lock failed (EXPECTED)"
-    - C2: Abort()
-    - C2: c2Retries++
-    - C2: Sleep(10ms)
-
-T23 (23ms): C1 complete first transaction
-    - C1: Get("shared_key") → success, read its own write "c1_value"
-    - C1: Put("shared_key", "c1_final") → success, updated value
-    - C1: Commit() → success, released all locks
-    - C1: printed "[C1] SUCCESS after 1 attempts"
-    - C1: exited
-
-T32 (32ms): C2 attempt 4
-    - C2: Begin() → txid: "c2-tx4"
-    - C2: Put("shared_key", "c2_value") → success! No locks held
-    - C2: Get("shared_key") → success, read its own write "c2_value"
-    - C2: Put("shared_key", "c2_final") → success
-    - C2: Commit() → success
-    - C2: printed "[C2] SUCCESS after 4 attempts"
-    - C2: exited
-
-T35 (35ms): Verification
-    - C3: Read shared_key
-    - Final value: "c2_final" (C2 last committed)
-*/
-
 func TestRetryLogicWithForcedConflict(t *testing.T) {
     fmt.Println("\n=== Testing Retry Logic with Forced Conflicts ===")
     
@@ -250,10 +169,8 @@ func TestRetryLogicWithForcedConflict(t *testing.T) {
     fmt.Printf("\n=== Retry Statistics ===\n")
     fmt.Printf("C1 retries: %d\n", finalC1Retries)
     fmt.Printf("C2 retries: %d\n", finalC2Retries)
-    
-    // at least one should have retried due to lock conflicts
-    assert.True(t, finalC1Retries > 0 || finalC2Retries > 0, 
-                 "At least one client should have retried due to lock conflict")
+
+    assert.True(t, finalC2Retries > 0, "C2 should have retried due to lock conflict with C1")
 
     // Verify final value
     c3 := NewClient([]string{"localhost:8080"})
