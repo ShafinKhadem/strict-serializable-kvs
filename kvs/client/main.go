@@ -306,12 +306,6 @@ func runClient(id int, hosts []string, done *atomic.Bool, workload *kvs.Workload
 					}
 				} else {
 					client.Abort()
-					// Exponential backoff, max 100ms
-					backoff := time.Duration(1<<uint(min(retryCount, 7))) * time.Millisecond
-					if backoff > 100*time.Millisecond {
-						backoff = 100 * time.Millisecond
-					}
-					time.Sleep(backoff)
 				}
 
 				if retryCount >= maxRetries {
