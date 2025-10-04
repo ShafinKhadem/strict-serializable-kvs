@@ -1,0 +1,5 @@
+config,commits_per_sec,aborts_per_sec
+Single-Server,997,0.0
+2-Servers,901,0.0
+3-Servers,1276,1.0
+4-Servers,1605,1.2

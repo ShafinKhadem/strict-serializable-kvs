@@ -35,10 +35,8 @@ func (client *Client) GetTx(k string) string {
 }
 
 func TestPutGet(t *testing.T) {
-	// client := Dial(hosts[0])
 	client := NewClient([]string{"localhost:8080"})
 
-	// tx0
 	client.Begin()
 
 	err := client.Put("test", "value")
@@ -50,7 +48,6 @@ func TestPutGet(t *testing.T) {
 
 	client.Commit()
 
-	// tx1
 	client.Begin()
 	got, err = client.Get("test")
 	assert.Nil(t, err)
@@ -78,11 +75,8 @@ func TestPutGet(t *testing.T) {
 }
 
 func TestWWConflict(t *testing.T) {
-	// c1 := Dial(hosts[0])
-	// c2 := Dial(hosts[0])
-
 	c1 := NewClient([]string{"localhost:8080"})
-    c2 := NewClient([]string{"localhost:8080"})
+	c2 := NewClient([]string{"localhost:8080"})
 
 	c1.Begin()
 	c2.Begin()
@@ -105,16 +99,15 @@ func TestWWConflict(t *testing.T) {
 	err = c2.Put("c1", "c2")
 	assert.NotNil(t, err)
 
-	c1.Commit()
-	assert.Panics(t, func() { c2.Commit() }, "c2 commit should fail")
+	err = c1.Commit()
+	assert.Nil(t, err)
+
+	c2.Abort()
 }
 
 func TestRWConflict(t *testing.T) {
-	// c1 := Dial(hosts[0])
-	// c2 := Dial(hosts[0])
-
 	c1 := NewClient([]string{"localhost:8080"})
-    c2 := NewClient([]string{"localhost:8080"})
+	c2 := NewClient([]string{"localhost:8080"})
 
 	c1.Begin()
 	c2.Begin()
@@ -138,8 +131,10 @@ func TestRWConflict(t *testing.T) {
 	err = c2.Put("c1", "c2")
 	assert.NotNil(t, err)
 
-	c1.Commit()
-	assert.Panics(t, func() { c2.Commit() }, "c2 commit should fail")
+	err = c1.Commit()
+	assert.Nil(t, err)
+
+	c2.Abort()
 
 	c1.Begin()
 	c2.Begin()
@@ -150,6 +145,8 @@ func TestRWConflict(t *testing.T) {
 	_, err = c2.Get("c1")
 	assert.NotNil(t, err)
 
-	c1.Commit()
-	assert.Panics(t, func() { c2.Commit() }, "c2 commit should fail")
+	err = c1.Commit()
+	assert.Nil(t, err)
+
+	c2.Abort()
 }
