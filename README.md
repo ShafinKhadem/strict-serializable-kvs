@@ -81,6 +81,10 @@ This graph tells the story of our surprising contention results. The line is ess
 
 Abort rates stayed very low across all configurations—basically zero for 1-3 servers, and only 1 abort/s for the 4-server setup. This makes sense given the YCSB-B workload. The low abort rate is probably why our retry mechanism doesn't cause much overhead. If we were seeing high abort rates, those retries would start compounding and we'd see much worse throughput degradation.
 
+### Known Limitations
+
+Single-threaded clients have limited workload concurrency. Increasing client concurrency by running multiple goroutines per client should improve throughput.
+
 ---
 
 ## Design
